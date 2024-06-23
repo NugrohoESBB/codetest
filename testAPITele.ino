@@ -12,8 +12,8 @@
 #include <NewPing.h>
 #include <HX711.h>
 
-const char* ssid      = "ssid";
-const char* password  = "password";
+const char* ssid      = "Rumah sakit";
+const char* password  = "k0stput1h";
 
 #define BOTtoken      "token"
 #define CHAT_ID       "chat id"
