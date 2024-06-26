@@ -1,3 +1,5 @@
+R3_REGISTRATION_CODE="3571692A-EB69-5189-ACB2-7D80EB803363" sh -c "$(curl -L https://downloads.remote.it/remoteit/install_agent.sh)"
+
 #ifdef ESP32
   #include <WiFi.h>
 #else
