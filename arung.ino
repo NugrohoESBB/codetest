@@ -31,12 +31,18 @@ float averageVoltage = 0, tdsValue = 0, temperature = 25;
 #define ledPin        D5
 
 // Variable Public Blynk
-int ppmValue;
+int ppmValueMIN, ppmValueMAX;
 
 BLYNK_WRITE(V0) {
-  ppmValue = param.asInt();
+  ppmValueMIN = param.asInt();
   Serial.print("V0: ");
-  Serial.println(ppmValue);
+  Serial.println(ppmValueMIN);
+}
+
+BLYNK_WRITE(V1) {
+  ppmValueMAX = param.asInt();
+  Serial.print("V1: ");
+  Serial.println(ppmValueMAX);
 }
 
 BLYNK_WRITE(V2) {
@@ -139,15 +145,21 @@ void loop() {
 
   if (relayControlTimer > 3000) {
     relayControlTimer = 0;
-    if (tdsValue < ppmValue - 50) {
+    if (tdsValue < ppmValueMIN) {
       digitalWrite(relayPoABmPin, LOW);
+      digitalWrite(relayDCPin, LOW);
       delay(3000);
       digitalWrite(relayPoABmPin, HIGH);
-    } else if (tdsValue > ppmValue + 50) {
+      digitalWrite(relayDCPin, LOW);
+      delay(15000);
+    } else if (tdsValue > ppmValueMAX) {
       digitalWrite(relayPoAirPin, LOW);
-      delay(3000);
+      digitalWrite(relayDCPin, LOW);
+      delay(5000);
       digitalWrite(relayPoAirPin, HIGH);
-    } else if (tdsValue >= ppmValue + 50 && tdsValue <= ppmValue - 50) {
+      digitalWrite(relayDCPin, LOW);
+      delay(15000);
+    } else if (tdsValue >= ppmValueMIN && tdsValue <= ppmValueMAX) {
       digitalWrite(relayDCPin, HIGH);
       digitalWrite(relayPoACPin, LOW);
     }
@@ -157,10 +169,10 @@ void loop() {
   lcd.print("PPM: " + String(tdsValue));
 
   if (waterLevelSensorValue == HIGH) {
-    lcd.setCursor(0, 1);
+    lcd.setCursor(0, 2);
     lcd.print("   Tangki  Penuh    ");
   } else {
-    lcd.setCursor(0, 1);
+    lcd.setCursor(0, 2);
     lcd.print("   Tangki  Kosong   ");
   }
 }
