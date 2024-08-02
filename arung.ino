@@ -31,18 +31,18 @@ float averageVoltage = 0, tdsValue = 0, temperature = 25;
 #define ledPin        D5
 
 // Variable Public Blynk
-int ppmValueMIN, ppmValueMAX;
+int MINppmtarget, MAXppmtarget;
 
 BLYNK_WRITE(V0) {
-  ppmValueMIN = param.asInt();
+  MINppmtarget = param.asInt();
   Serial.print("V0: ");
-  Serial.println(ppmValueMIN);
+  Serial.println(MINppmtarget);
 }
 
 BLYNK_WRITE(V1) {
-  ppmValueMAX = param.asInt();
+  MAXppmtarget = param.asInt();
   Serial.print("V1: ");
-  Serial.println(ppmValueMAX);
+  Serial.println(MAXppmtarget);
 }
 
 BLYNK_WRITE(V2) {
@@ -68,13 +68,16 @@ LiquidCrystal_I2C lcd(0x27, 20, 4);
 elapsedMillis tdsSampleTimer;
 elapsedMillis tdsPrintTimer;
 elapsedMillis relayControlTimer;
+unsigned long relayStartTime = 0;
+bool relayActive = false;
+int relayState = 0;
 
 void setup() {
   Serial.begin(115200);
   Blynk.begin(auth, ssid, pass);
   
-  //lcd.init();
-  lcd.begin();
+  lcd.init();
+  //lcd.begin();
   lcd.backlight();
 
   // Input output initialization
@@ -143,25 +146,40 @@ void loop() {
     Blynk.virtualWrite(V3, tdsValue);
   }
 
-  if (relayControlTimer > 3000) {
+  if (!relayActive && relayControlTimer > 3000) {
     relayControlTimer = 0;
-    if (tdsValue < ppmValueMIN) {
+    if (tdsValue < MINppmtarget) {
+      relayActive = true;
+      relayState = 1;
+      relayStartTime = millis();
       digitalWrite(relayPoABmPin, LOW);
       digitalWrite(relayDCPin, LOW);
-      delay(3000);
-      digitalWrite(relayPoABmPin, HIGH);
-      digitalWrite(relayDCPin, LOW);
-      delay(15000);
-    } else if (tdsValue > ppmValueMAX) {
+    } else if (tdsValue > MAXppmtarget) {
+      relayActive = true;
+      relayState = 2;
+      relayStartTime = millis();
       digitalWrite(relayPoAirPin, LOW);
       digitalWrite(relayDCPin, LOW);
-      delay(5000);
-      digitalWrite(relayPoAirPin, HIGH);
-      digitalWrite(relayDCPin, LOW);
-      delay(15000);
-    } else if (tdsValue >= ppmValueMIN && tdsValue <= ppmValueMAX) {
+    } else if (tdsValue >= MINppmtarget && tdsValue <= MAXppmtarget) {
       digitalWrite(relayDCPin, HIGH);
       digitalWrite(relayPoACPin, LOW);
+    }
+  }
+
+  if (relayActive) {
+    if (relayState == 1 && millis() - relayStartTime > 3000) {
+      digitalWrite(relayPoABmPin, HIGH);
+      relayState = 0;
+      relayStartTime = millis();
+    }
+    if (relayState == 2 && millis() - relayStartTime > 5000) {
+      digitalWrite(relayPoAirPin, HIGH);
+      relayState = 0;
+      relayStartTime = millis();
+    }
+    if (relayState == 0 && millis() - relayStartTime > 15000) {
+      digitalWrite(relayDCPin, HIGH);
+      relayActive = false;
     }
   }
 
