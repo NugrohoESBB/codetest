@@ -39,7 +39,7 @@ BLYNK_WRITE(V0) {
   Serial.println(ppmValue);
 }
 
-BLYNK_WRITE(V1) {
+BLYNK_WRITE(V2) {
   switch (param.asInt()) {
     case 0: { // Item 1
       Serial.println("OFF");
@@ -107,7 +107,7 @@ void setup() {
 void loop() {
   Blynk.run();
   int waterLevelSensorValue = digitalRead(waterLevelPin);
-  Blynk.virtualWrite(V3, waterLevelSensorValue);
+  Blynk.virtualWrite(V4, waterLevelSensorValue);
 
   if (tdsSampleTimer > 40) {
     tdsSampleTimer = 0;
@@ -134,7 +134,7 @@ void loop() {
     lcd.print("PPM Nutrisi: "); 
     lcd.print(tdsValue, 0);
 
-    Blynk.virtualWrite(V2, tdsValue);
+    Blynk.virtualWrite(V3, tdsValue);
   }
 
   if (relayControlTimer > 3000) {
@@ -187,3 +187,4 @@ int getMedianNum(int bArray[], int iFilterLen) {
   }
   return bTemp;
 }
+
