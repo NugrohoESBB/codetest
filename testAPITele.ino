@@ -1,215 +1,220 @@
-R3_REGISTRATION_CODE="3571692A-EB69-5189-ACB2-7D80EB803363" sh -c "$(curl -L https://downloads.remote.it/remoteit/install_agent.sh)"
-https://www.tomshardware.com/how-to/fix-cannot-currently-show-desktop-error-raspberry-pi
-
-  
+#ifdef ESP32
+  #include <WiFi.h>
+#else
+  #include <ESP8266WiFi.h>
+#endif
 #include <Wire.h>
-#include <OneWire.h>
-#include <ESP8266WiFi.h>
-#include <BlynkSimpleEsp8266.h>
+#include <ESP32Servo.h>
+#include <WiFiClientSecure.h>
+#include <UniversalTelegramBot.h>
 #include <LiquidCrystal_I2C.h>
+#include <ArduinoJson.h>
+#include <NewPing.h>
+#include <HX711.h>
+
+const char* ssid      = "Rumah sakit";
+const char* password  = "k0stput1h";
+
+#define BOTtoken      "token"
+#define CHAT_ID       "chat id"
+
+#ifdef ESP8266
+  X509List cert(TELEGRAM_CERTIFICATE_ROOT);
+#endif
+
+WiFiClientSecure client;
+UniversalTelegramBot bot(BOTtoken, client);
+
+int botRequestDelay   = 1000;
+unsigned long lastTimeBotRan;
+
+// Configuration pin
+const int capacitiveProximityPin  = 34;
+const int inductiveProximityPin   = 35;
+const int servo1Pin               = 17;
+const int servo2Pin               = 5;
+const int trigPin                 = 13;
+const int echoPin                 = 12;
+
+#define CLK           26
+#define DOUT          25
+#define MAX_DISTANCE  200
+
+HX711 scale;
+Servo myServo1;
+Servo myServo2;
 LiquidCrystal_I2C lcd(0x27, 20, 4);
+NewPing sonar(trigPin, echoPin, MAX_DISTANCE);
 
-#define BLYNK_TEMPLATE_ID "TMPL6SZ9sUosl"
-#define BLYNK_TEMPLATE_NAME "HidroponikIoT"
-#define BLYNK_AUTH_TOKEN "TNxaYdePGtw9eWyW3mp7AAbxkotRFK19"
-
-char auth[] = BLYNK_AUTH_TOKEN;
-char ssid[] = "Rumah sakit";
-char pass[] = "k0stput1h";
-WidgetLCD lcdBlynk1(V0);
-WidgetLCD lcdBlynk2(V3);
-
-const int relayPinIN = D8;
-const int relayPinOUT = D7;
-const int turbidityPin = D4;
-OneWire ds(D5);
-
-// pH sensor
-float calibration_value = 25.06;
-int phval = 0;
-float ph_act;
-unsigned long int avgval;
-int buffer_arr[10], temp;
-
-// ds sensor
-byte i;
-byte present = 0;
-byte type_s;
-byte data[12];
-byte addr[8];
-float celsius, fahrenheit;
-
-// turbidity sensor
-int turbidity;
-
-void dsSensor() {
-  if ( !ds.search(addr)) {
-    ds.reset_search();
-    delay(250);
-    return;
-  }
-
-
-  if (OneWire::crc8(addr, 7) != addr[7]) {
-    Serial.println("CRC is not valid!");
-    return;
-  }
-  Serial.println();
-
-  // the first ROM byte indicates which chip
-  switch (addr[0]) {
-    case 0x10:
-      type_s = 1;
-      break;
-    case 0x28:
-      type_s = 0;
-      break;
-    case 0x22:
-      type_s = 0;
-      break;
-    default:
-      Serial.println("Device is not a DS18x20 family device.");
-      return;
-  }
-
-  ds.reset();
-  ds.select(addr);
-  ds.write(0x44, 1);        // start conversion, with parasite power on at the end
-  delay(1000);
-  present = ds.reset();
-  ds.select(addr);
-  ds.write(0xBE);         // Read Scratchpad
-
-  for ( i = 0; i < 9; i++) {
-    data[i] = ds.read();
-  }
-
-  // Convert the data to actual temperature
-  int16_t raw = (data[1] << 8) | data[0];
-  if (type_s) {
-    raw = raw << 3; // 9 bit resolution default
-    if (data[7] == 0x10) {
-      raw = (raw & 0xFFF0) + 12 - data[6];
-    }
-  } else {
-    byte cfg = (data[4] & 0x60);
-    if (cfg == 0x00) raw = raw & ~7;  // 9 bit resolution, 93.75 ms
-    else if (cfg == 0x20) raw = raw & ~3; // 10 bit res, 187.5 ms
-    else if (cfg == 0x40) raw = raw & ~1; // 11 bit res, 375 ms
-  }
-
-  celsius = (float)raw / 16.0;
-  fahrenheit = celsius * 1.8 + 32.0;
-  Blynk.virtualWrite(V4, celsius);
-  lcd.setCursor(0, 2);
-  lcd.print("Suhu: " + String(celsius));
-
-  if (celsius > 32.00) {
-    lcdBlynk2.print(0, 1, "Pompa Nyala");
-    lcd.setCursor(0, 3);
-    lcd.print("Pompa Nyala");
-    digitalWrite(relayPinIN, LOW);
-    digitalWrite(relayPinOUT, HIGH);
-    delay(2000);
-    digitalWrite(relayPinIN, HIGH);
-    digitalWrite(relayPinOUT, HIGH);
-  } else {
-    lcdBlynk2.print(0, 1, "Pompa Mati");
-    lcd.setCursor(0, 3);
-    lcd.print("Pompa Mati ");
-    digitalWrite(relayPinIN, HIGH);
-    digitalWrite(relayPinOUT, LOW);
-    delay(2000);
-    digitalWrite(relayPinIN, HIGH);
-    digitalWrite(relayPinOUT, HIGH);
-  }
-
-  Serial.print("  Temperature = ");
-  Serial.print(celsius);
-  Serial.print(" Celsius, ");
-}
-
-void pHsensor() {
-  for (int i = 0; i < 10; i++)
-  {
-    buffer_arr[i] = analogRead(A0);
-    delay(30);
-  }
-  for (int i = 0; i < 9; i++)
-  {
-    for (int j = i + 1; j < 10; j++)
-    {
-      if (buffer_arr[i] > buffer_arr[j])
-      {
-        temp = buffer_arr[i];
-        buffer_arr[i] = buffer_arr[j];
-        buffer_arr[j] = temp;
-      }
-    }
-  }
-  avgval = 0;
-  for (int i = 2; i < 8; i++)
-    avgval += buffer_arr[i];
-  float volt = (float)avgval * 5.0 / 1024 / 6;
-  ph_act = -5.70 * volt + calibration_value;
-  Blynk.virtualWrite(V1, ph_act);
-  Serial.print("ph val:");
-  Serial.println(ph_act);
-
-  lcd.setCursor(0, 0);
-  lcd.print("pH: " + String(ph_act));
-}
-
-void tubiditySensor() {
-  analogWriteResolution(10);
-  int sensorValue = analogRead(turbidityPin);
-  //Serial.println(sensorValue);
-  turbidity = map(sensorValue, 0, 750, 100, 0);
-  delay(100);
-  Serial.print("turbidity= ");
-  Serial.println(turbidity);
-
-  lcd.setCursor(0, 1);
-  lcd.print("turbidity: " + String(turbidity));
-  delay(100);
-}
 
 void setup() {
   Serial.begin(115200);
-  Blynk.begin(auth, ssid, pass);
 
+  #ifdef ESP8266
+    configTime(0, 0, "pool.ntp.org");
+    client.setTrustAnchors(&cert);
+  #endif
+
+  //lcd.init();
   lcd.begin();
   lcd.backlight();
 
-  pinMode(relayPinIN, OUTPUT);
-  pinMode(relayPinOUT, OUTPUT);
+  // Initialize sensor pins
+  pinMode(capacitiveProximityPin, INPUT);
+  pinMode(inductiveProximityPin, INPUT);
 
-  digitalWrite(relayPinIN, HIGH);
-  digitalWrite(relayPinOUT, HIGH);
+  // Initialize Load Cell
+  scale.begin(DOUT, CLK);
+  scale.set_scale();
+  scale.tare();
 
-  WiFi.begin(ssid, pass);
-  int wifi_ctr = 0;
+  // Initialize Servo
+  myServo1.attach(servo1Pin);
+  myServo2.attach(servo2Pin);
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  
+  #ifdef ESP32
+    client.setCACert(TELEGRAM_CERTIFICATE_ROOT);
+  #endif
+
   while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.println(".");
+    delay(1000);
+    Serial.println("Connecting to WiFi..");
+    lcd.setCursor(0,1);
+    lcd.print("    Connecting...   ");
   }
-  Serial.println("Wifi Tersambung");
-
-  lcd.setCursor(0, 0);
-  lcd.print("SISTEM START:");
+  
+  Serial.println(WiFi.localIP());
+  lcd.clear();
+  lcd.setCursor(0,1);
+  lcd.print(" WiFi: " + String(ssid));
+  lcd.setCursor(0,2);
+  lcd.print("      ALL CLEAR     ");
   delay(2000);
   lcd.clear();
 }
 
+
 void loop() {
-  Blynk.run();
+  int capacitiveValue = digitalRead(capacitiveProximityPin);
+  int inductiveValue = digitalRead(inductiveProximityPin);
+  unsigned int distance = sonar.ping_cm();
+  float weight = scale.get_units(10);
 
-  pHsensor();
-  tubiditySensor();
-  dsSensor();
+  String message = "LAPORAN STATUS\n\n";
+  message += "LOADCELL  : " + String(weight) + " g\n";
+  message += "PROX CAPA : " + String(capacitiveValue) + "\n";
+  message += "PROX INDU : " + String(inductiveValue) + "\n";
+  message += "Keterangan : -";
+  bot.sendMessage(CHAT_ID, message, "");
 
-  lcdBlynk1.print(0, 0, "pH  : " + String(ph_act));
-  lcdBlynk1.print(0, 1, "Turb: " + String(turbidity));
+  Serial.print("Capacitive: ");
+  Serial.print(capacitiveValue);
+  Serial.print("\tInductive: ");
+  Serial.print(inductiveValue);
+  Serial.print("\tDistance: ");
+  Serial.print(distance);
+  Serial.print(" cm\tWeight: ");
+  Serial.print(weight);
+  Serial.println(" g");
 
-  lcdBlynk2.print(0, 0, "Suhu: " + String(celsius) + "°C");
+  // Display values on LCD
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Capacitive: " + String(capacitiveValue));
+
+  lcd.setCursor(0, 1);
+  lcd.print("Inductive: " + String(inductiveValue));
+  
+  lcd.setCursor(0, 2);
+  lcd.print("Distance: " + String(distance) + " cm");
+  
+  lcd.setCursor(0, 3);
+  lcd.print("Weight: " + String(weight) + " g");
+
+  if (distance < 10) {
+    for(int posDegrees1 = 0; posDegrees1 <= 180; posDegrees1++) {
+      myServo1.write(posDegrees1);
+      Serial.println(posDegrees1);
+      delay(20);
+    }
+
+    for(int posDegrees1 = 180; posDegrees1 >= 0; posDegrees1--) {
+      myServo1.write(posDegrees1);
+      Serial.println(posDegrees1);
+      delay(20);
+    }
+  }
+
+  if (capacitiveValue = 1) {
+    for(int posDegrees2 = 0; posDegrees2 <= 180; posDegrees2++) {
+      myServo2.write(posDegrees2);
+      Serial.println(posDegrees2);
+      delay(20);
+    }
+
+    for(int posDegrees2 = 180; posDegrees2 >= 0; posDegrees2--) {
+      myServo2.write(posDegrees2);
+      Serial.println(posDegrees2);
+      delay(20);
+    }
+  }
+
+  if (inductiveValue = 0) {
+    for(int posDegrees2 = 0; posDegrees2 <= 180; posDegrees2++) {
+      myServo2.write(posDegrees2);
+      Serial.println(posDegrees2);
+      delay(20);
+    }
+
+    for(int posDegrees2 = 180; posDegrees2 >= 0; posDegrees2--) {
+      myServo2.write(posDegrees2);
+      Serial.println(posDegrees2);
+      delay(20);
+    }
+  }
+
+  sendData();
+}
+
+void handleNewMessages(int numNewMessages) {
+  Serial.println("handleNewMessages");
+  Serial.println(String(numNewMessages));
+
+  for (int i=0; i<numNewMessages; i++) {
+    String chat_id = String(bot.messages[i].chat_id);
+    if (chat_id != CHAT_ID){
+      bot.sendMessage(chat_id, "Unauthorized user", "");
+      continue;
+    }
+    
+    String text = bot.messages[i].text;
+    Serial.println(text);
+
+    String from_name = bot.messages[i].from_name;
+
+    if (text == "/start") {
+      String welcome = "Welcome, " + from_name + ".\n\n";
+      welcome += "SYSTEM MENU. \n";
+      welcome += "Welcome everyone \n";
+      bot.sendMessage(chat_id, welcome, "");
+    }
+
+  }
+  
+}
+
+void sendData() {
+  if (millis() > lastTimeBotRan + botRequestDelay)  {
+    int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+
+    while(numNewMessages) {
+      Serial.println("got response");
+      handleNewMessages(numNewMessages);
+      numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+    }
+    lastTimeBotRan = millis();
+  }
 }
